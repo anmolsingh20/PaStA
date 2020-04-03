@@ -32,6 +32,7 @@ from bin.pasta_check_mbox import check_mbox
 from bin.pasta_compare import compare
 from bin.pasta_compare_clusters import compare_clusters
 from bin.pasta_evaluate_patches import evaluate_patches
+from bin.pasta_aggregate import aggregate
 from bin.pasta_optimise_cluster import optimise_cluster
 from bin.pasta_rate import rate
 from bin.pasta_ripup import ripup
@@ -72,6 +73,7 @@ def usage(me, exit_code=errno.EINVAL):
           '  compare\n'
           '  evaluate_patches\n'
           '  optimise_cluster\n'
+          '  aggregate\n'
           '  rate\n'
           '  sync\n'
           '  select\n'
@@ -149,6 +151,8 @@ def main(argv):
         return compare(config, sub, argv)
     elif sub == 'evaluate_patches':
         return evaluate_patches(config, sub, argv)
+    elif sub == 'aggregate':
+        return aggregate(config, sub, argv)
     elif sub == 'rate':
         return rate(config, sub, argv)
     elif sub == 'statistics':
