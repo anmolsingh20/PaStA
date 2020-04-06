@@ -80,15 +80,19 @@ def aggregate(config, prog, argv):
 
         threads = repo.mbox.load_threads()
 
-        def _load_responses_dict(msg_id, response_list):
+        def _load_responses_dict(response_list, pending_responses):
+            if not pending_responses:
+                return
+            next_msg = pending_responses.pop(0)
             try:
-                next_responses = threads.reply_to_map[msg_id]
+                next_responses = list(threads.reply_to_map[next_msg])
+                pending_responses.extend(next_responses)
                 for resp in next_responses:
-                    resp_dict = {'parent': msg_id, 'resp_msg_id': resp, 'message': repo.mbox.get_raws(resp)}
+                    resp_dict = {'parent': next_msg, 'resp_msg_id': resp, 'message': repo.mbox.get_raws(resp)}
                     response_list.append(resp_dict)
-                    _load_responses_dict(resp, response_list)
+                _load_responses_dict(response_list, pending_responses)
             except KeyError:
-                log.info("The email {} has no response_list".format(msg_id))
+                log.info("The email {} has no response_list".format(next_msg))
                 return
 
         clusters = []
@@ -125,7 +129,8 @@ def aggregate(config, prog, argv):
 
                 # Handle responses
                 response_lst = []
-                _load_responses_dict(patch_id, response_lst)
+                pending_lst = [patch_id]
+                _load_responses_dict(response_lst, pending_lst)
                 cluster_dict['responses'] = response_lst
                 clusters.append(cluster_dict)
 
