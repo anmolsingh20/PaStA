@@ -80,20 +80,23 @@ def aggregate(config, prog, argv):
 
         threads = repo.mbox.load_threads()
 
-        def _load_responses_dict(response_list, pending_responses):
-            if not pending_responses:
-                return
-            next_msg = pending_responses.pop(0)
-            try:
-                next_responses = list(threads.reply_to_map[next_msg])
-                pending_responses.extend(next_responses)
-                for resp in next_responses:
-                    resp_dict = {'parent': next_msg, 'resp_msg_id': resp, 'message': repo.mbox.get_raws(resp)}
-                    response_list.append(resp_dict)
-                _load_responses_dict(response_list, pending_responses)
-            except KeyError:
-                log.info("The email {} has no response_list".format(next_msg))
-                return
+        def _load_responses_dict(msg_id, response_list):
+            queue = [msg_id]
+            seen = []
+            while queue:
+                next_msg = queue.pop(0)
+                if next_msg not in seen:
+                    seen.append(next_msg)
+                    try:
+                        next_msg_responses = list(threads.reply_to_map[next_msg])
+                        queue.extend(next_msg_responses)
+                        for resp in next_msg_responses:
+                            resp_dict = {'parent': next_msg, 'resp_msg_id': resp, 'message': repo.mbox.get_raws(resp)}
+                            response_list.append(resp_dict)
+                    except KeyError:
+                        log.info("The email {} has no response".format(next_msg))
+                        continue
+            return
 
         clusters = []
         for d, u in clustering.iter_split():
@@ -129,8 +132,7 @@ def aggregate(config, prog, argv):
 
                 # Handle responses
                 response_lst = []
-                pending_lst = [patch_id]
-                _load_responses_dict(response_lst, pending_lst)
+                _load_responses_dict(patch_id, response_lst)
                 cluster_dict['responses'] = response_lst
                 clusters.append(cluster_dict)
 
