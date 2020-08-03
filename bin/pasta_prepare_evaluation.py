@@ -276,22 +276,60 @@ def prepare_patch_review(config, clustering):
 
 def pre_process_response_data(config):
     # Load responses dict into dataframe, preliminary processing, indexing
+    # Idea: We do the following transformation in the preprocess step:
+    # We split the response_df into two parts: responses and upstream. This split is necessary
+    # for the following reasons:
+    # 1. responses and upstream columns have different datatypes: dict vs set, and hence need to be handled differently.
+    # 2. for bigger datasets, this also keeps the memory needs in check: we merge these two parts in the merge step,
+    # and hence the intermediate (huge) dataframes are not in memory anymore at one time making it computationally
+    # feasible given the systems' constraints with decent performance.
+    # The two parts which are output after this step: f_denorm_responses and f_denorm_upstream, need to be merged
+    # back together later such that the resulting dataframe has the following property:
+    # One row for each unique patch_id, response (and response details, e.g. parent), and upstream.
+    #
+    # Example: Entry p1, u1, u2 in patch-groups, with two responses r1, r2 for p1
+    #                               where p1 is a patch with two linked upstream commits, u1 and u2
+    # Denormalizing responses would yield the following two rows -
+    #               p1, r1
+    #               p1, r2
+    # Denormalizing upstream would yield the following two rows -
+    #               p1, u1
+    #               p1, u2
+    # The merge on patch id in the next step would then yield the following rows -
+    #               p1, r1, u1
+    #               p1, r2, u1
+    #               p1, r1, u2
+    #               p1, r2, u2
+    # Advantage of such a data transformation: possibility to aggregate a variety of statistics, e.g.:
+    # Patch to responses, and all the details for that response (authors, various email tags, message details
+    # like length etc.), upstream to responses (and response characteristics as before), upstream to patch details, etc.
+    #
+    # Index: Merge works efficiently when we join on an index.
+    #
+
 
     with open(config.f_responses_pkl, 'rb') as handle:
         response_df = pickle.load(handle)
 
-    # Convert set to list
-    response_df['upstream'] = response_df['upstream'].map(list)
-
+    # Give a name to the numerical index
     response_df.index.name = "idx"
 
+    # Fill null patch ids with a value '_'
     response_df.fillna({'patch_id': '_'}, inplace=True)
     log.info("Filled NA for patch_id")
 
+    # Append patch_id to the index such that we have a MultiIndex (idx, patch_id)
+    # This is a decision for two reasons:
+    # 1. patch_id cannot uniquely identify a row, e.g. when it is null ('_')
+    # 2. Many analysis are easier with MultiIndex, without needing a groupby
     response_df.set_index(['patch_id'], append=True, inplace=True)
     log.info("Done setting index for response_df")
 
-    # Denormalize
+    # Denormalize responses and upstream
+
+    # Denormalize responses
+    # Pandas melt is used to bring the data in the given de-normalized form.
+    # reset_index operation preserves the index as a column, which otherwise could be lost
     df_melt_responses = pd.melt(response_df.responses.apply(pd.Series).reset_index(),
                                 id_vars=['idx', 'patch_id'],
                                 value_name='responses').sort_index()
@@ -307,6 +345,11 @@ def pre_process_response_data(config):
 
     df_denorm_responses.to_csv(config.f_denorm_responses, index=False)
     log.info("Processed responses!")
+
+    # Denormalize responses
+
+    # Convert set to list: This is necessary to apply pd.Series for converting set type column to individual rows
+    response_df['upstream'] = response_df['upstream'].map(list)
 
     df_melt_upstream = pd.melt(response_df.upstream.apply(pd.Series).reset_index(),
                                id_vars=['idx', 'patch_id'],
